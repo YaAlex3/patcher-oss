@@ -5,15 +5,9 @@
 import struct
 import os
 import zlib
-import gzip
 import io
 import subprocess
-import shutil
-import string
-import random
-import gc
 import sys
-import datetime
 
 help_message = f"""Usage: {sys.argv[0]} <kernel>
 
@@ -28,8 +22,6 @@ def main():
         sys.exit(help_message)
     patch()
 
-def randname():
-    return ''.join(random.choice(string.digits) for _ in range(5))
 
 def printi(text):
     print(f"INFO: {text}")
@@ -38,30 +30,24 @@ def printi(text):
 # ------------------------------------------------------
 # Patch
 
-
 def patch():
     try:
-        # constants
-        # paths
-        DEVNULL = open(os.devnull, 'wb')
         zimg_fn = sys.argv[1]
         # Check given file
         if os.path.exists(zimg_fn):
             zimg_fn = os.path.abspath(zimg_fn)
         else: raise Exception('File not found')
         new_zimg_fn = f"{zimg_fn}-p"
-        # //
-        # commands
+
         p7z_cmd = [
-            '7z', 'a', 'dummy', '-tgzip', '-si', '-so', '-mx5', '-mmt4'
-        ]
-        # //
+            '7z', 'a', 'dummy', '-tgzip', '-si', '-so', '-mx5', '-mmt4']
 
         with open(zimg_fn, 'rb') as zimg_file:
             zimg_file.seek(0x24)
             data = struct.unpack("III", zimg_file.read(4 * 3))
             if (data[0] != 0x016f2818):
-                raise Exception("ERROR: Can't found IMG magic number")
+                raise Exception(
+                    "ERROR: Can't found IMG magic number")
 
             zimg_size = data[2]
             zfile_size = os.path.getsize(zimg_fn)
@@ -79,8 +65,7 @@ def patch():
             gz_begin = zimg.find(b'\x1F\x8B\x08\x00')
             if (gz_begin < 0x24):
                 raise Exception(
-                    "ERROR: Can't found GZIP magic header. Your image is either already patched or corrupted."
-                )
+                    "ERROR: Can't found GZIP magic header. Your image is either already patched or corrupted.")
 
         zimg_file = io.BytesIO()
         zimg_file.write(zimg)
@@ -98,7 +83,8 @@ def patch():
         printi('Unpacking kernel data...')
         kernel_data = zlib.decompress(gz_data, 16 + zlib.MAX_WBITS)
         if (kernel_data is None):
-            raise Exception("ERROR: Can't decompress GZIP data")
+            raise Exception(
+                "ERROR: Can't decompress GZIP data")
         if b'skip_initramfs' not in kernel_data:
             raise Exception(
                 "ERROR: Didn't find skip_initramfs, no need to patch.")
@@ -118,8 +104,7 @@ def patch():
         gz_end = zimg.rfind(kernel_sz)
         if (gz_end < len(zimg) - 0x1000):
             raise Exception(
-                "ERROR: Can't find ends of GZIP data (gz_end = 0x{gz_end}). Your image is either already patched or corrupted."
-            )
+                "ERROR: Can't find ends of GZIP data (gz_end = 0x{gz_end}). Your image is either already patched or corrupted.")
 
         # Check if size isn't bigger so we don't overlap
         # (won't happen since its smaller 100% of the time) 
@@ -127,7 +112,8 @@ def patch():
         gz_size = gz_end - gz_begin
         new_gz_size = len(new_gz_data)
         if (new_gz_size > gz_size):
-            raise Exception("ERROR: Can't new GZIP size too large")
+            raise Exception(
+                "ERROR: Can't new GZIP size too large")
         printi('Getting all back together...')
         with open(new_zimg_fn, 'w+b') as new_zimg_file:
             zimg_file.seek(0)
@@ -144,7 +130,8 @@ def patch():
             # Search for gzip size pos
             pos = zimg.find(struct.pack("I", gz_end - 4))
             if (pos < 0x24 or pos > 0x400 or pos > gz_begin):
-                raise Exception("ERROR: Can't find offset of orig GZIP size field")
+                raise Exception(
+                    "ERROR: Can't find offset of orig GZIP size field")
             new_zimg_file.seek(pos)
             # Write new gz size
             new_zimg_file.write(struct.pack("I", gz_begin + new_gz_size - 4))
