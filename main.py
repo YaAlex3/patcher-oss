@@ -20,7 +20,12 @@ def main():
         sys.exit(help_message)
     elif sys.argv[1] in ['-h', '--help']:
         sys.exit(help_message)
-    patch()
+    zimg_fn = sys.argv[1]
+    # Check given file
+    if os.path.exists(zimg_fn):
+        zimg_fn = os.path.abspath(zimg_fn)
+    else: raise Exception('File not found')
+    patch(zimg_fn)
 
 
 def printi(text):
@@ -30,13 +35,8 @@ def printi(text):
 # ------------------------------------------------------
 # Patch
 
-def patch():
+def patch(zimg_fn):
     try:
-        zimg_fn = sys.argv[1]
-        # Check given file
-        if os.path.exists(zimg_fn):
-            zimg_fn = os.path.abspath(zimg_fn)
-        else: raise Exception('File not found')
         new_zimg_fn = f"{zimg_fn}-p"
 
         p7z_cmd = [
@@ -138,4 +138,6 @@ def patch():
         return True
     except Exception as errp:
         print(str(errp))
-main()
+        return False
+if __name__ == "__main__":
+    main()
