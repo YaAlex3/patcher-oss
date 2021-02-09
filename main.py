@@ -9,11 +9,13 @@ import io
 import subprocess
 import sys
 
+
 help_message = f"""Usage: {sys.argv[0]} <kernel>
 
 Description:
     Makes 32bit SAR kernels boot ramdisk.
     Refer to README.md for additional instructions."""
+
 
 def main():
     if len(sys.argv) == 1:
@@ -24,7 +26,8 @@ def main():
     # Check given file
     if os.path.exists(zimg_fn):
         zimg_fn = os.path.abspath(zimg_fn)
-    else: raise Exception('File not found')
+    else:
+        raise Exception('File not found')
     patch(zimg_fn)
 
 
@@ -107,7 +110,7 @@ def patch(zimg_fn):
                 "ERROR: Can't find ends of GZIP data (gz_end = 0x{gz_end}). Your image is either already patched or corrupted.")
 
         # Check if size isn't bigger so we don't overlap
-        # (won't happen since its smaller 100% of the time) 
+        # (won't happen since its smaller 100% of the time)
         gz_end = gz_end + 4
         gz_size = gz_end - gz_begin
         new_gz_size = len(new_gz_data)
@@ -136,8 +139,11 @@ def patch(zimg_fn):
             # Write new gz size
             new_zimg_file.write(struct.pack("I", gz_begin + new_gz_size - 4))
         return True
+
     except Exception as errp:
         print(str(errp))
         return False
+
+
 if __name__ == "__main__":
     main()
