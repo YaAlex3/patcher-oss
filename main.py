@@ -2,14 +2,15 @@
 #
 # Developer: YaAlex (yaalex.xyz)
 
-import struct
-import os
-import zlib
 import io
+import os
+import platform
+import struct
 import subprocess
 import sys
+import zlib
 
-
+ver = float(platform.python_version())
 help_message = f"""Usage: {sys.argv[0]} <kernel>
 
 Description:
@@ -18,6 +19,8 @@ Description:
 
 
 def main():
+    if ver < 3.9.1:
+        sys.exit("ERROR: Python version too old. at least 3.9.1")
     if len(sys.argv) == 1:
         sys.exit(help_message)
     elif sys.argv[1] in ['-h', '--help']:
