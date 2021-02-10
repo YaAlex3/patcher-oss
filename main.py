@@ -10,7 +10,7 @@ import subprocess
 import sys
 import zlib
 
-ver = float(platform.python_version())
+
 help_message = f"""Usage: {sys.argv[0]} <kernel>
 
 Description:
@@ -19,8 +19,11 @@ Description:
 
 
 def main():
-    if ver < 3.9.1:
-        sys.exit("ERROR: Python version too old. at least 3.9.1")
+    ver = platform.python_version()
+    ver = tuple(map(int, (ver.split("."))))
+    min_ver = tuple(map(int, ("3.9.0".split("."))))
+    if ver < min_ver:
+        sys.exit("ERROR: Python version too old. at least 3.9.0")
     if len(sys.argv) == 1:
         sys.exit(help_message)
     elif sys.argv[1] in ['-h', '--help']:
