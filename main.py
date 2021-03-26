@@ -48,10 +48,10 @@ class Patch:
         self.split_zimg(zimg_fn)
         self.join_zimg()
 
-## split_zimg(filepath):
-# Takes a path to original zImage, splits it in parts
-# checking for inconsistancies in progress. Only the gzipped kernel is being modified afterwards
-# everything else is reused.
+# split_zimg(filepath):
+#   Takes a path to original zImage, splits it in parts
+#   checking for inconsistancies in progress. Only the gzipped kernel is being modified afterwards
+#   everything else is reused.
 
     def split_zimg(self, zimg_fn):
         with open(zimg_fn, 'rb') as zimg_file:
@@ -91,9 +91,9 @@ class Patch:
                     "ERROR: Can't find offset of orig GZIP size field")
             del d
 
-### kernel_work(gzip data): 
-# Takes original gzip data, unpacks it using p7zip
-# patches by replacing a string, and then packs back modified one
+# kernel_work(gzip data):
+#   Takes original gzip data, unpacks it using p7zip
+#   patches by replacing a string, and then packs back modified one
 
     def kernel_work(self, gz_data):
         p7z_pack = [
@@ -126,9 +126,9 @@ class Patch:
         self.kernel_sz = struct.pack("I", kernel_size)
         self.new_gz_size = len(self.new_gz_data)
 
-## join_zimg():
-# Takes all the results of previous work
-# gluing it together in a new modified zImage
+# join_zimg():
+#   Takes all the results of previous work
+#   gluing it together in a new modified zImage
 
     def join_zimg(self):
         new_zimg_fn = f"{self.zimg_fn}-p"
