@@ -27,10 +27,11 @@ def fail(message):
 
 
 def test():
-    download_kernel()
+    if not os.path.isfile(kernel_fn):
+        download_kernel()
     # Fail if patch errors
     printt("testing patch()")
-    if not main.patch(kernel_fn):
+    if not main.Patch(kernel_fn):
         fail("patch() returned false; error msg above")
     # Fail if out file doesnt exist
     if os.path.isfile(out_fn):
