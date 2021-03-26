@@ -2,14 +2,8 @@
 #
 # Developer: YaAlex (yaalex.xyz)
 
-import io
-import os
-import platform
-import struct
-import subprocess
-import sys
-import zlib
-
+import io, os, platform
+import struct, subprocess, sys
 
 help_message = f"""Usage: {sys.argv[0]} <kernel>
 
@@ -48,8 +42,11 @@ def patch(zimg_fn):
     try:
         new_zimg_fn = f"{zimg_fn}-p"
 
-        p7z_cmd = [
+        p7z_pack = [
             '7z', 'a', 'dummy', '-tgzip', '-si', '-so', '-mx5', '-mmt4']
+
+        p7z_unpack = [
+            '7z', 'e', '-tgzip', '-si', '-so', '-mmt4']
 
         with open(zimg_fn, 'rb') as zimg_file:
             zimg_file.seek(0x24)
@@ -85,12 +82,13 @@ def patch(zimg_fn):
         if ext_flags not in [2, 4]:
             raise Exception(
                 f"ERROR: Can't support extra flags = 0x{ext_flags}")
-
         zimg_file.seek(gz_begin)
         gz_data = zimg_file.read()
-
         printi('Unpacking kernel data...')
-        kernel_data = zlib.decompress(gz_data, 16 + zlib.MAX_WBITS)
+        p7zc = subprocess.run(p7z_unpack, input=gz_data, capture_output=True)
+        if p7zc.returncode != 0 and 'end of the payload' not in str(p7zc.stderr):
+            raise Exception(f'ERROR: p7z ended with an error. stderr: {p7zc.stderr}')
+        kernel_data = p7zc.stdout
         if (kernel_data is None):
             raise Exception(
                 "ERROR: Can't decompress GZIP data")
@@ -102,18 +100,17 @@ def patch(zimg_fn):
         kernel_data = kernel_data.replace(b'skip_initramfs',
                                           b'want_initramfs')
         printi('Packing kernel data...')
-        p7zc = subprocess.run(p7z_cmd, input=kernel_data, capture_output=True)
+        p7zc = subprocess.run(p7z_pack, input=kernel_data, capture_output=True)
         if p7zc.returncode != 0:
             raise Exception(f'ERROR: p7z ended with an error. stderr: {p7zc.stderr}')
         new_gz_data = p7zc.stdout
-
         # Find proper end of gzip block by finding the size
         kernel_size = len(kernel_data)
         kernel_sz = struct.pack("I", kernel_size)
         gz_end = zimg.rfind(kernel_sz)
         if (gz_end < len(zimg) - 0x1000):
             raise Exception(
-                "ERROR: Can't find ends of GZIP data (gz_end = 0x{gz_end}). Your image is either already patched or corrupted.")
+                "ERROR: Can't find ends of GZIP data (gz_end = 0x{gz_end}).\nYour image is either already patched or corrupted.")
 
         # Check if size isn't bigger so we don't overlap
         # (won't happen since its smaller 100% of the time)
