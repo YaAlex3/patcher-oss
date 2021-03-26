@@ -2,8 +2,12 @@
 #
 # Developer: YaAlex (yaalex.xyz)
 
-import io, os, platform
-import struct, subprocess, sys
+import mmap
+import os
+import platform
+import struct
+import subprocess
+import sys
 
 help_message = f"""Usage: {sys.argv[0]} <kernel>
 
@@ -28,7 +32,7 @@ def main():
         zimg_fn = os.path.abspath(zimg_fn)
     else:
         raise Exception('File not found')
-    patch(zimg_fn)
+    Patch(zimg_fn)
 
 
 def printi(text):
@@ -36,54 +40,68 @@ def printi(text):
 
 
 # ------------------------------------------------------
-# Patch
+# Patch: Takes in a filepath to original zImage, returns modified.
 
-def patch(zimg_fn):
-    try:
-        new_zimg_fn = f"{zimg_fn}-p"
+class Patch:
+    def __init__(self, zimg_fn):
+        self.zimg_fn = zimg_fn
+        self.split_zimg(zimg_fn)
+        self.join_zimg()
 
-        p7z_pack = [
-            '7z', 'a', 'dummy', '-tgzip', '-si', '-so', '-mx5', '-mmt4']
+## split_zimg(filepath):
+# Takes a path to original zImage, splits it in parts
+# checking for inconsistancies in progress. Only the gzipped kernel is being modified afterwards
+# everything else is reused.
 
-        p7z_unpack = [
-            '7z', 'e', '-tgzip', '-si', '-so', '-mmt4']
-
+    def split_zimg(self, zimg_fn):
         with open(zimg_fn, 'rb') as zimg_file:
             zimg_file.seek(0x24)
             data = struct.unpack("III", zimg_file.read(4 * 3))
             if (data[0] != 0x016f2818):
                 raise Exception(
-                    "ERROR: Can't found IMG magic number")
-
+                    "ERROR: Didn't find IMG magic number")
             zimg_size = data[2]
             zfile_size = os.path.getsize(zimg_fn)
             if (zfile_size < zimg_size):
                 raise Exception(
                     f"ERROR: zImage size: {zfile_size} (expected: {zimg_size})")
 
-            zimg_footer = ''
-            if (zfile_size > zimg_size):
-                zimg_file.seek(zimg_size)
-                zimg_footer = zimg_file.read()
-
             zimg_file.seek(0)
-            zimg = zimg_file.read(zimg_size)
-            gz_begin = zimg.find(b'\x1F\x8B\x08\x00')
-            if (gz_begin < 0x24):
+            d = mmap.mmap(zimg_file.fileno(), zimg_size, access=mmap.ACCESS_READ)
+            self.gz_begin = d.find(b'\x1F\x8B\x08\x00')
+            if (self.gz_begin < 0x24):
                 raise Exception(
-                    "ERROR: Can't found GZIP magic header. Your image is either already patched or corrupted.")
+                   "ERROR: Can't found GZIP magic header. Your image is either already patched or corrupted.")
+            zimg_file.seek(0)
+            self.unp_data = zimg_file.read(self.gz_begin)
+            zimg_file.seek(self.gz_begin)
+            gz_data = zimg_file.read()
+            self.kernel_work(gz_data)
+            gz_end = d.rfind(self.kernel_sz)
+            if (gz_end < len(d) - 0x1000):
+                raise Exception(
+                    "ERROR: Can't find ends of GZIP data. Your image is either already patched or corrupted.")
+            self.gz_end = gz_end + 4
+            self.gz_size = self.gz_end - self.gz_begin
+            zimg_file.seek(self.gz_end)
+            self.zimg_footer = zimg_file.read()
+            self.pos = d.find(struct.pack("I", self.gz_end - 4))
+            if (self.pos < 0x24 or self.pos > 0x400 or self.pos > self.gz_begin):
+                raise Exception(
+                    "ERROR: Can't find offset of orig GZIP size field")
+            del d
 
-        zimg_file = io.BytesIO()
-        zimg_file.write(zimg)
+### kernel_work(gzip data): 
+# Takes original gzip data, unpacks it using p7zip
+# patches by replacing a string, and then packs back modified one
 
-        zimg_file.seek(gz_begin + 8)
-        data = struct.unpack("BB", zimg_file.read(2))
-        ext_flags = data[0]
-        if ext_flags not in [2, 4]:
-            raise Exception(
-                f"ERROR: Can't support extra flags = 0x{ext_flags}")
-        zimg_file.seek(gz_begin)
-        gz_data = zimg_file.read()
+    def kernel_work(self, gz_data):
+        p7z_pack = [
+            '7z', 'a', 'dummy', '-tgzip', '-si', '-so', '-mx5', '-mmt4']
+
+        p7z_unpack = [
+            '7z', 'e', '-tgzip', '-si', '-so', '-mmt4']
+
         printi('Unpacking kernel data...')
         p7zc = subprocess.run(p7z_unpack, input=gz_data, capture_output=True)
         if p7zc.returncode != 0 and 'end of the payload' not in str(p7zc.stderr):
@@ -95,57 +113,37 @@ def patch(zimg_fn):
         if b'skip_initramfs' not in kernel_data:
             raise Exception(
                 "ERROR: Didn't find skip_initramfs, no need to patch.")
-        # Patch kernel data
         printi('Patching kernel data...')
-        kernel_data = kernel_data.replace(b'skip_initramfs',
-                                          b'want_initramfs')
+        kernel_data = kernel_data.replace(b'skip_initramfs',  # basically everything
+                                          b'want_initramfs')  # we were doing is for this
         printi('Packing kernel data...')
         p7zc = subprocess.run(p7z_pack, input=kernel_data, capture_output=True)
         if p7zc.returncode != 0:
             raise Exception(f'ERROR: p7z ended with an error. stderr: {p7zc.stderr}')
-        new_gz_data = p7zc.stdout
+        self.new_gz_data = p7zc.stdout
         # Find proper end of gzip block by finding the size
         kernel_size = len(kernel_data)
-        kernel_sz = struct.pack("I", kernel_size)
-        gz_end = zimg.rfind(kernel_sz)
-        if (gz_end < len(zimg) - 0x1000):
-            raise Exception(
-                "ERROR: Can't find ends of GZIP data (gz_end = 0x{gz_end}).\nYour image is either already patched or corrupted.")
+        self.kernel_sz = struct.pack("I", kernel_size)
+        self.new_gz_size = len(self.new_gz_data)
 
-        # Check if size isn't bigger so we don't overlap
-        # (won't happen since its smaller 100% of the time)
-        gz_end = gz_end + 4
-        gz_size = gz_end - gz_begin
-        new_gz_size = len(new_gz_data)
-        if (new_gz_size > gz_size):
-            raise Exception(
-                "ERROR: Can't new GZIP size too large")
+## join_zimg():
+# Takes all the results of previous work
+# gluing it together in a new modified zImage
+
+    def join_zimg(self):
+        new_zimg_fn = f"{self.zimg_fn}-p"
         printi('Getting all back together...')
         with open(new_zimg_fn, 'w+b') as new_zimg_file:
-            zimg_file.seek(0)
-            new_zimg_file.write(zimg_file.read(gz_begin))
-            new_zimg_file.write(new_gz_data)
-            # Pad with zeroes
-            new_zimg_file.write(b'\0' * (gz_size - new_gz_size))
-            # Write dtbs at the end
-            zimg_file.seek(gz_end)
-            new_zimg_file.write(zimg_file.read())
-            new_zimg_file.write(zimg_footer)
-            zimg_file.close()
+            new_zimg_file.write(self.unp_data)  # unpacker code
+            new_zimg_file.write(self.new_gz_data)  # patched kernel
+            # Pad with zeroes (to satisfy piggy unpacker)
+            new_zimg_file.write(b'\0' * (self.gz_size - self.new_gz_size))
+            new_zimg_file.write(self.zimg_footer)  # dtbs and whatever is before/after
             new_zimg_file.seek(0)
-            # Search for gzip size pos
-            pos = zimg.find(struct.pack("I", gz_end - 4))
-            if (pos < 0x24 or pos > 0x400 or pos > gz_begin):
-                raise Exception(
-                    "ERROR: Can't find offset of orig GZIP size field")
-            new_zimg_file.seek(pos)
+            new_zimg_file.seek(self.pos)
             # Write new gz size
-            new_zimg_file.write(struct.pack("I", gz_begin + new_gz_size - 4))
-        return True
-
-    except Exception as errp:
-        print(str(errp))
-        return False
+            new_zimg_file.write(struct.pack("I", self.gz_begin +
+                                            self.new_gz_size - 4))
 
 
 if __name__ == "__main__":
