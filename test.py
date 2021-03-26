@@ -27,7 +27,8 @@ def fail(message):
 
 
 def test():
-    download_kernel()
+    if not os.path.isfile(kernel_fn):
+        download_kernel()
     # Fail if patch errors
     printt("testing patch()")
     if not main.patch(kernel_fn):
