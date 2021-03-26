@@ -8,6 +8,7 @@ import platform
 import struct
 import subprocess
 import sys
+import zlib
 
 help_message = f"""Usage: {sys.argv[0]} <kernel>
 
@@ -92,21 +93,14 @@ class Patch:
             del d
 
 # kernel_work(gzip data):
-#   Takes original gzip data, unpacks it using p7zip
+#   Takes original gzip data, unpacks it using inbuilt zlib
 #   patches by replacing a string, and then packs back modified one
 
     def kernel_work(self, gz_data):
         p7z_pack = [
             '7z', 'a', 'dummy', '-tgzip', '-si', '-so', '-mx5', '-mmt4']
-
-        p7z_unpack = [
-            '7z', 'e', '-tgzip', '-si', '-so', '-mmt4']
-
         printi('Unpacking kernel data...')
-        p7zc = subprocess.run(p7z_unpack, input=gz_data, capture_output=True)
-        if p7zc.returncode != 0 and 'end of the payload' not in str(p7zc.stderr):
-            raise Exception(f'ERROR: p7z ended with an error. stderr: {p7zc.stderr}')
-        kernel_data = p7zc.stdout
+        kernel_data = zlib.decompress(gz_data, 16 + zlib.MAX_WBITS)
         if (kernel_data is None):
             raise Exception(
                 "ERROR: Can't decompress GZIP data")
