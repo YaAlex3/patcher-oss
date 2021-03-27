@@ -45,13 +45,13 @@ def printi(text):
 
 class Patch:
     def __init__(self, zimg_fn):
-        error_msg = "Your kernel is probably corrupted or been tampered with \
-                     If you have a rare device, or getting this after you check \
-                     everything, create an issue on github."
         self.zimg_fn = zimg_fn
         self.split_zimg(zimg_fn)
         self.join_zimg()
         if os.path.getsize(zimg_fn) != os.path.getsize(self.new_zimg_fn):
+            error_msg = "Your kernel is probably corrupted or been tampered with \
+                     If you have a rare device, or getting this after you check \
+                     everything, create an issue on github."
             raise Exception(f"ERROR: Size mismatch!\n{error_msg}")
 
 
