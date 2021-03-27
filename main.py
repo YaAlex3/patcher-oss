@@ -45,9 +45,15 @@ def printi(text):
 
 class Patch:
     def __init__(self, zimg_fn):
+        error_msg = "Your kernel is probably corrupted or been tampered with \
+                     If you have a rare device, or getting this after you check \
+                     everything, create an issue on github."
         self.zimg_fn = zimg_fn
         self.split_zimg(zimg_fn)
         self.join_zimg()
+        if os.path.getsize(zimg_fn) != os.path.getsize(self.new_zimg_fn):
+            raise Exception(f"ERROR: Size mismatch!\n{error_msg}")
+
 
 # split_zimg(filepath):
 #   Takes a path to original zImage, splits it in parts
@@ -62,26 +68,15 @@ class Patch:
                 raise Exception(
                     "ERROR: Didn't find IMG magic number")
             zimg_size = data[2]
-            zfile_size = os.path.getsize(zimg_fn)
-            if (zfile_size < zimg_size):
-                raise Exception(
-                    f"ERROR: zImage size: {zfile_size} (expected: {zimg_size})")
-
             zimg_file.seek(0)
             d = mmap.mmap(zimg_file.fileno(), zimg_size, access=mmap.ACCESS_READ)
             self.gz_begin = d.find(b'\x1F\x8B\x08\x00')
-            if (self.gz_begin < 0x24):
-                raise Exception(
-                   "ERROR: Can't found GZIP magic header. Your image is either already patched or corrupted.")
             zimg_file.seek(0)
             self.unp_data = zimg_file.read(self.gz_begin)
             zimg_file.seek(self.gz_begin)
             gz_data = zimg_file.read()
             self.kernel_work(gz_data)
             gz_end = d.rfind(self.kernel_sz)
-            if (gz_end < len(d) - 0x1000):
-                raise Exception(
-                    "ERROR: Can't find ends of GZIP data. Your image is either already patched or corrupted.")
             self.gz_end = gz_end + 4
             self.gz_size = self.gz_end - self.gz_begin
             zimg_file.seek(self.gz_end)
@@ -90,7 +85,6 @@ class Patch:
             if (self.pos < 0x24 or self.pos > 0x400 or self.pos > self.gz_begin):
                 raise Exception(
                     "ERROR: Can't find offset of orig GZIP size field")
-            del d
 
 # kernel_work(gzip data):
 #   Takes original gzip data, unpacks it using inbuilt zlib
@@ -101,7 +95,7 @@ class Patch:
             '7z', 'a', 'dummy', '-tgzip', '-si', '-so', '-mx5', '-mmt4']
         printi('Unpacking kernel data...')
         kernel_data = zlib.decompress(gz_data, 16 + zlib.MAX_WBITS)
-        if (kernel_data is None):
+        if not kernel_data:
             raise Exception(
                 "ERROR: Can't decompress GZIP data")
         if b'skip_initramfs' not in kernel_data:
@@ -125,9 +119,9 @@ class Patch:
 #   gluing it together in a new modified zImage
 
     def join_zimg(self):
-        new_zimg_fn = f"{self.zimg_fn}-p"
+        self.new_zimg_fn = f"{self.zimg_fn}-p"
         printi('Getting all back together...')
-        with open(new_zimg_fn, 'w+b') as new_zimg_file:
+        with open(self.new_zimg_fn, 'w+b') as new_zimg_file:
             new_zimg_file.write(self.unp_data)  # unpacker code
             new_zimg_file.write(self.new_gz_data)  # patched kernel
             # Pad with zeroes (to satisfy piggy unpacker)
