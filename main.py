@@ -9,7 +9,7 @@ import struct
 import subprocess
 import sys
 import zlib
-
+import io
 help_message = f"""Usage: {sys.argv[0]} <kernel>
 
 Description:
@@ -27,18 +27,51 @@ def main():
         sys.exit(help_message)
     elif sys.argv[1] in ['-h', '--help']:
         sys.exit(help_message)
-    zimg_fn = sys.argv[1]
+    in_fn = sys.argv[1]
     # Check given file
-    if os.path.exists(zimg_fn):
-        zimg_fn = os.path.abspath(zimg_fn)
+    if os.path.exists(in_fn):
+        in_fn = os.path.abspath(in_fn)
     else:
         raise Exception('File not found')
-    Patch(zimg_fn)
+    BootWork(in_fn)
 
 
 def printi(text):
     print(f"INFO: {text}")
 
+
+class BootWork:
+    def __init__(self, filename):
+        with open(filename, 'r+b') as f:
+            header = struct.Struct('8s I I I I I I I I I 4x 16s 512s 8x')
+            magic, kernel_size, kernel_addr, ramdisk_size, ramdisk_addr, second_size, second_addr, \
+                tags_addr, page_size, dt_size, name, cmdline = header.unpack(f.read(header.size))
+
+            #if magic != 'ANDROID!':
+            #    raise Exception(f"{filename} is not a valid android boot image\n")
+
+            offset = page_size
+
+            zimg_fn = f"{filename}-zImage"
+
+            if kernel_size > 0:
+                self.dump_part(f, zimg_fn, offset, kernel_size)
+            p = Patch(zimg_fn)
+            new_kernel_data = p.new_zimg_data
+            os.remove(zimg_fn)
+            self.replace_part(new_kernel_data, f, offset)
+
+    def replace_part(self, data, file, offset):
+        file.seek(offset, 0)
+        file.write(data)
+
+    def dump_part(self, f_in, filename, offset, size):
+        f_out = open(filename, 'wb')
+
+        f_in.seek(offset, 0)
+        f_out.write(f_in.read(size))
+
+        f_out.close()
 
 # ------------------------------------------------------
 # Patch: Takes in a filepath to original zImage, returns modified.
@@ -47,8 +80,8 @@ class Patch:
     def __init__(self, zimg_fn):
         self.zimg_fn = zimg_fn
         self.split_zimg(zimg_fn)
-        self.join_zimg()
-        if os.path.getsize(zimg_fn) != os.path.getsize(self.new_zimg_fn):
+        self.new_zimg_data = self.join_zimg()
+        if os.path.getsize(zimg_fn) != len(self.new_zimg_data):
             error_msg = "Your kernel is probably corrupted or been tampered with \
                      If you have a rare device, or getting this after you check \
                      everything, create an issue on github."
@@ -64,7 +97,7 @@ class Patch:
         with open(zimg_fn, 'rb') as zimg_file:
             zimg_file.seek(0x24)
             data = struct.unpack("III", zimg_file.read(4 * 3))
-            if (data[0] != 0x016f2818):
+            if data[0] != 0x016f2818:
                 raise Exception(
                     "ERROR: Didn't find IMG magic number")
             zimg_size = data[2]
@@ -119,19 +152,19 @@ class Patch:
 #   gluing it together in a new modified zImage
 
     def join_zimg(self):
-        self.new_zimg_fn = f"{self.zimg_fn}-p"
         printi('Getting all back together...')
-        with open(self.new_zimg_fn, 'w+b') as new_zimg_file:
+        with io.BytesIO() as new_zimg_file:
             new_zimg_file.write(self.unp_data)  # unpacker code
             new_zimg_file.write(self.new_gz_data)  # patched kernel
             # Pad with zeroes (to satisfy piggy unpacker)
             new_zimg_file.write(b'\0' * (self.gz_size - self.new_gz_size))
             new_zimg_file.write(self.zimg_footer)  # dtbs and whatever is before/after
-            new_zimg_file.seek(0)
             new_zimg_file.seek(self.pos)
             # Write new gz size
             new_zimg_file.write(struct.pack("I", self.gz_begin +
                                             self.new_gz_size - 4))
+            new_zimg_file.seek(0)
+            return new_zimg_file.read()
 
 
 if __name__ == "__main__":
