@@ -57,7 +57,7 @@ def printi(text):
 
 def find_7z():
     if os.name != 'nt':
-        return '7zz' if which('7zz') != Null else '7z'
+        return '7zz' if which('7zz') != None else '7z'
     key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, "Software\\7-Zip")
     path =  winreg.QueryValueEx(key, "Path")[0] + "7z.exe"
     printi(f"Found 7-Zip at: {path}")
