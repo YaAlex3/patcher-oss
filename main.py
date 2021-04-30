@@ -1,6 +1,18 @@
 #! /usr/bin/env python
 #
-# Developer: YaAlex (yaalex.xyz)
+# Copyright 2021 Alexander Kravchenko
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, version 3 of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import mmap
 import os
@@ -9,6 +21,9 @@ import struct
 import subprocess
 import sys
 import zlib
+
+if os.name == 'nt':
+    import winreg
 
 help_message = f"""Usage: {sys.argv[0]} <kernel>
 
@@ -25,7 +40,7 @@ def main():
         sys.exit("ERROR: Python version too old. at least 3.9.0")
     if len(sys.argv) == 1:
         sys.exit(help_message)
-    elif sys.argv[1] in ['-h', '--help']:
+    if sys.argv[1] in ['-h', '--help']:
         sys.exit(help_message)
     zimg_fn = sys.argv[1]
     # Check given file
@@ -38,6 +53,16 @@ def main():
 
 def printi(text):
     print(f"INFO: {text}")
+
+def find_7z():
+    if os.name != 'nt':
+        return '7z'
+    key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, "Software\\7-Zip")
+    path =  winreg.QueryValueEx(key, "Path")[0] + "7z.exe"
+    printi(f"Found 7-Zip at: {path}")
+    return path
+    
+sz = find_7z()
 
 
 # ------------------------------------------------------
@@ -92,7 +117,7 @@ class Patch:
 
     def kernel_work(self, gz_data):
         p7z_pack = [
-            '7z', 'a', 'dummy', '-tgzip', '-si', '-so', '-mx5', '-mmt4']
+            sz, 'a', 'dummy', '-tgzip', '-si', '-so', '-mx5', '-mmt4']
         printi('Unpacking kernel data...')
         kernel_data = zlib.decompress(gz_data, 16 + zlib.MAX_WBITS)
         if not kernel_data:
