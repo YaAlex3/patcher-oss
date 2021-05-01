@@ -2,11 +2,14 @@
   Patcher to make kernel boot ramdisk on ARM32 SaR devices.
 
 ### Requirements:
-- python (latest)
+#### Windows:
+- 7-Zip (download and install)
+#### Linux:
 - p7zip-full (install using your distro's package manager)
+#### Common:
+- python (latest)
 - arm32-SAR boot image
 - any boot image repacking tool out there
-
 ### Short Instructions:
 - Unpack your boot image yourself using preferred tools
 - Supply kernel (zImage) as first argument to the main.py script in the source tree
