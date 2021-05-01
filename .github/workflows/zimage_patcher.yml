@@ -31,5 +31,5 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test
       run: |
-        wget -q https://raw.githubusercontent.com/YaAlex3/patcher-files/main/kernel
-        python ./main.py kernel
+        wget -q https://raw.githubusercontent.com/AndroidDump/xiaomi_olivelite_dump/olivelite-user-10-QKQ1.191014.001-V11.0.2.0.QCPINXM-release-keys/boot.img
+        python ./main.py boot.img
