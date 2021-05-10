@@ -96,12 +96,9 @@ class BootWork:
         file.write(data)
 
     def dump_part(self, f_in, filename, offset, size):
-        f_out = open(filename, 'wb')
-
-        f_in.seek(offset, 0)
-        f_out.write(f_in.read(size))
-
-        f_out.close()
+        with open(filename, 'wb') as f_out:
+            f_in.seek(offset, 0)
+            f_out.write(f_in.read(size))
 
 # ------------------------------------------------------
 # Patch: Takes in a filepath to original zImage, returns modified.
