@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import io
 import mmap
 import os
 import platform
@@ -23,10 +24,8 @@ import sys
 import zlib
 from shutil import which
 
-if os.name == 'nt':
+if windows := os.name == 'nt':
     import winreg
-
-import io
 
 help_message = f"""Usage: {sys.argv[0]} <kernel>
 
@@ -58,7 +57,7 @@ def printi(text):
     print(f"INFO: {text}")
 
 def find_7z():
-    if os.name != 'nt':
+    if not windows:
         return '7zz' if which('7zz') != None else '7z'
     key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, "Software\\7-Zip")
     path =  winreg.QueryValueEx(key, "Path")[0] + "7z.exe"
@@ -75,41 +74,34 @@ class BootWork:
             magic, kernel_size, kernel_addr, ramdisk_size, ramdisk_addr, second_size, second_addr, \
                 tags_addr, page_size, dt_size, name, cmdline = header.unpack(f.read(header.size))
 
-            #if magic != 'ANDROID!':
-            #    raise Exception(f"{filename} is not a valid android boot image\n")
-
-            offset = page_size
-
-            zimg_fn = f"{filename}-zImage"
+            if magic != b'ANDROID!':
+                raise Exception(f"{filename} is not a valid android boot image\n")
 
             if kernel_size > 0:
-                self.dump_part(f, zimg_fn, offset, kernel_size)
-            p = Patch(zimg_fn)
+                zimg_fobj = self.dump_part(f, page_size, kernel_size)
+            p = Patch(zimg_fobj)
             new_kernel_data = p.new_zimg_data
-            os.remove(zimg_fn)
-            self.replace_part(new_kernel_data, f, offset)
+            self.replace_part(new_kernel_data, f, page_size)
 
     def replace_part(self, data, file, offset):
         file.seek(offset, 0)
         file.write(data)
 
-    def dump_part(self, f_in, filename, offset, size):
-        f_out = open(filename, 'wb')
-
+    def dump_part(self, f_in, offset, size):
+        fobj = io.BytesIO()
         f_in.seek(offset, 0)
-        f_out.write(f_in.read(size))
-
-        f_out.close()
+        fobj.write(f_in.read(size))
+        return fobj
 
 # ------------------------------------------------------
 # Patch: Takes in a filepath to original zImage, returns modified.
 
 class Patch:
-    def __init__(self, zimg_fn):
-        self.zimg_fn = zimg_fn
-        self.split_zimg(zimg_fn)
+    def __init__(self, zimg_file):
+        self.zimg_file = zimg_file
+        self.split_zimg(zimg_file)
         self.new_zimg_data = self.join_zimg()
-        if os.path.getsize(zimg_fn) != len(self.new_zimg_data):
+        if self.zimg_len != len(self.new_zimg_data):
             error_msg = "Your kernel is probably corrupted or been tampered with \
                      If you have a rare device, or getting this after you check \
                      everything, create an issue on github."
@@ -121,31 +113,32 @@ class Patch:
 #   checking for inconsistancies in progress. Only the gzipped kernel is being modified afterwards
 #   everything else is reused.
 
-    def split_zimg(self, zimg_fn):
-        with open(zimg_fn, 'rb') as zimg_file:
-            zimg_file.seek(0x24)
-            data = struct.unpack("III", zimg_file.read(4 * 3))
-            if data[0] != 0x016f2818:
-                raise Exception(
-                    "ERROR: Didn't find IMG magic number")
-            zimg_size = data[2]
-            zimg_file.seek(0)
-            d = mmap.mmap(zimg_file.fileno(), zimg_size, access=mmap.ACCESS_READ)
-            self.gz_begin = d.find(b'\x1F\x8B\x08\x00')
-            zimg_file.seek(0)
-            self.unp_data = zimg_file.read(self.gz_begin)
-            zimg_file.seek(self.gz_begin)
-            gz_data = zimg_file.read()
-            self.kernel_work(gz_data)
-            gz_end = d.rfind(self.kernel_sz)
-            self.gz_end = gz_end + 4
-            self.gz_size = self.gz_end - self.gz_begin
-            zimg_file.seek(self.gz_end)
-            self.zimg_footer = zimg_file.read()
-            self.pos = d.find(struct.pack("I", self.gz_end - 4))
-            if (self.pos < 0x24 or self.pos > 0x400 or self.pos > self.gz_begin):
-                raise Exception(
-                    "ERROR: Can't find offset of orig GZIP size field")
+    def split_zimg(self, zimg_file):
+        zimg_file.seek(0x24)
+        data = struct.unpack("III", zimg_file.read(4 * 3))
+        if data[0] != 0x016f2818:
+            raise Exception(
+                "ERROR: Didn't find IMG magic number")
+        zimg_size = data[2]
+        zimg_file.seek(0)
+        d = zimg_file.read()
+        self.gz_begin = d.find(b'\x1F\x8B\x08\x00')
+        zimg_file.seek(0)
+        self.unp_data = zimg_file.read(self.gz_begin)
+        zimg_file.seek(self.gz_begin)
+        gz_data = zimg_file.read()
+        self.kernel_work(gz_data)
+        gz_end = d.rfind(self.kernel_sz)
+        self.gz_end = gz_end + 4
+        self.gz_size = self.gz_end - self.gz_begin
+        zimg_file.seek(self.gz_end)
+        self.zimg_footer = zimg_file.read()
+        self.pos = d.find(struct.pack("I", self.gz_end - 4))
+        if (self.pos < 0x24 or self.pos > 0x400 or self.pos > self.gz_begin):
+            raise Exception(
+                "ERROR: Can't find offset of orig GZIP size field")
+        zimg_file.close()
+        self.zimg_len = len(d)
 
 # kernel_work(gzip data):
 #   Takes original gzip data, unpacks it using inbuilt zlib
