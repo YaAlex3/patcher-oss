@@ -70,6 +70,7 @@ sz = find_7z()
 class BootWork:
     def __init__(self, filename):
         with open(filename, 'r+b') as f:
+            f.seek(0x4040 if f.read(4) == b'BFBF' else 0)
             header = struct.Struct('8s I I I I I I I I I 4x 16s 512s 8x')
             magic, kernel_size, kernel_addr, ramdisk_size, ramdisk_addr, second_size, second_addr, \
                 tags_addr, page_size, dt_size, name, cmdline = header.unpack(f.read(header.size))
